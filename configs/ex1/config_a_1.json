@@ -1,0 +1,45 @@
+{
+  "font_h_path": "data/font.h",
+  "experiments": {
+    "A": {
+      "encoder": { "layer_sizes": [35, 64, 32, 16, 8, 2],   "activations": ["tanh", "tanh", "tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 8, 16, 32, 64, 35],   "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
+      "loss": "mse",
+      "optimizer": "adam",
+      "lr": 0.0004
+    },
+    "B": {
+      "encoder": { "layer_sizes": [35, 64, 32, 16, 8, 2],   "activations": ["tanh", "tanh", "tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 8, 16, 32, 64, 35],   "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
+      "loss": "mse",
+      "optimizer": "adam",
+      "lr": 0.0004
+    },
+    "C": {
+      "encoder": { "layer_sizes": [35, 64, 32, 16, 8, 2],   "activations": ["tanh", "tanh", "tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 8, 16, 32, 64, 35],   "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.0004
+    },
+    "D": {
+      "encoder": { "layer_sizes": [35, 64, 32, 16, 8, 2],   "activations": ["tanh", "tanh", "tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 8, 16, 32, 64, 35],   "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
+      "loss": "mse",
+      "optimizer": "adam",
+      "lr": 0.0004
+    },
+    "E": {
+      "encoder": { "layer_sizes": [35, 64, 32, 16, 8, 2],   "activations": ["tanh", "tanh", "tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 8, 16, 32, 64, 35],   "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.0004
+    }
+  },
+  "batch_size": 8,
+  "max_epochs": 10000,
+  "log_every": 500,
+  "patience": 100,
+  "min_delta": 1e-7
+}
