@@ -1,0 +1,21 @@
+{
+  "encoder": {
+    "layer_sizes": [35, 16, 2],
+    "activations": ["tanh", "identity"]
+  },
+  "decoder": {
+    "layer_sizes": [2, 16, 35],
+    "activations": ["tanh", "sigmoid"]
+  },
+  "dropout_rate": 0.0,
+  "loss": "mse",
+  "optimizer": "adam",
+  "optim_kwargs": {
+    "learning_rate": 0.001
+  },
+  "batch_size": 8,
+  "max_epochs": 1000,
+  "log_every": 100,
+  "patience": 10,
+  "min_delta": 0.0001
+}
