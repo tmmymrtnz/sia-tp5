@@ -1,0 +1,17 @@
+# entornos
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+
+# datasets generados
+data/mnist/
+plots
+
+# artefactos
+*.png
+
+my_venv
+
+search_results.csv
+
+.DS_Store
