@@ -16,7 +16,6 @@ from common.perceptrons.multilayer.trainer import Trainer
 from autoencoder.autoencoder import Autoencoder
 from runner_autoencoder import parse_font_h  # reutilizamos la función de parsing
 
-
 def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
     """
     Entrena un Autoencoder según conf_exp (la subconfig del experimento exp_id),
@@ -53,6 +52,12 @@ def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
     loss_hist = trainer.fit(X, X)
     epochs_tot = len(loss_hist)
 
+    # Guardar pesos del experimento
+    os.makedirs("checkpoints", exist_ok=True)
+    weight_path = f"checkpoints/ae_weights_{exp_id}.npz"
+    ae.save_weights(weight_path)
+    print(f">>> Pesos guardados en: {weight_path}")
+
     ae.eval_mode()
     X_recon = ae.forward(X)
     X_bin   = (X_recon > 0.5).astype(int)
@@ -61,7 +66,6 @@ def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
 
     perdida_final = loss_hist[-1]
     return perdida_final, errores, epochs_tot
-
 
 
 def main():
