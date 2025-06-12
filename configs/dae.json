@@ -1,0 +1,23 @@
+{
+  "font_h_path": "data/font.h",
+  "noise_level": 0.1,
+  "encoder": {
+    "layer_sizes": [35, 64, 32, 16, 8, 2],
+    "activations": ["tanh", "tanh", "tanh", "tanh", "identity"]
+  },
+  "decoder": {
+    "layer_sizes": [2, 8, 16, 32, 64, 35],
+    "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"]
+  },
+  "dropout_rate": 0.0,
+  "loss": "mse",
+  "optimizer": "adam",
+  "optim_kwargs": {
+    "learning_rate": 0.0004
+  },
+  "batch_size": 8,
+  "max_epochs": 4000,
+  "log_every": 500,
+  "patience": 100,
+  "min_delta": 1e-7
+}
