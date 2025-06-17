@@ -1,0 +1,22 @@
+{
+  "encoder": {
+    "layer_sizes": [784, 256, 128, 40],
+    "activations": ["relu", "relu", "identity"]
+  },
+  "decoder": {
+    "layer_sizes": [20, 128, 256, 784],
+    "activations": ["relu", "relu", "sigmoid"]
+  },
+  "latent_dim": 20,
+  "dropout_rate": 0.1,
+  "reconstruction_loss": "bce",
+  "optimizer": "adam",
+  "optim_kwargs": {
+    "learning_rate": 0.001
+  },
+  "batch_size": 32,
+  "max_epochs": 100,
+  "log_every": 10,
+  "patience": 10,
+  "min_delta": 1e-4
+}
