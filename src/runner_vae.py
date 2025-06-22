@@ -14,120 +14,69 @@ import numpy as np
 import requests
 import zipfile
 import io
+import glob
 from PIL import Image
 
 # Imports locales
-from common.perceptrons.multilayer.trainer import Trainer
 from autoencoder.autoencoder_vae import VAE
 from autoencoder.vaeloss import VAELoss
 from common.perceptrons.multilayer.vae_trainer import VAETrainer
 
+import fnmatch, os, zipfile, io, requests
+
+import fnmatch, os, zipfile, io, requests
+
+# añade arriba:
+import fnmatch
+
 def download_openmoji(target_dir="data/emojis"):
-    """
-    Descarga el dataset de OpenMoji y lo prepara para entrenar el VAE.
-    """
-    # URL del dataset de OpenMoji en formato PNG
-    url = "https://github.com/hfg-gmuend/openmoji/releases/download/14.0.0/openmoji-png-72x72.zip"
-    
-    # Crear directorio para los datos
-    os.makedirs(target_dir, exist_ok=True)
-    
-    emoji_dir = os.path.join(target_dir, "raw/72x72")
-    
-    # Si ya existe el directorio con los archivos, no descargar de nuevo
-    if os.path.exists(emoji_dir) and len(os.listdir(emoji_dir)) > 0:
-        print(f">>> Dataset ya descargado en {emoji_dir}")
-        return emoji_dir
-    
-    # Intentar descargar el archivo
-    print(">>> Descargando OpenMoji dataset...")
-    try:
-        response = requests.get(url, timeout=30)
-        if response.status_code != 200:
-            raise Exception(f"Error HTTP: {response.status_code}")
-        
-        # Extraer el archivo ZIP
-        print(">>> Extrayendo archivos...")
-        extract_dir = os.path.join(target_dir, "raw")
-        os.makedirs(extract_dir, exist_ok=True)
-        
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
-            zip_ref.extractall(extract_dir)
-        
-        print(f">>> Dataset extraído en {emoji_dir}")
-        return emoji_dir
-    
-    except Exception as e:
-        print(f">>> Error al descargar el dataset: {e}")
-        print("\n>>> INSTRUCCIONES PARA DESCARGA MANUAL:")
-        print(f">>> 1. Descarga el archivo ZIP desde: {url}")
-        print(f">>> 2. Crea la carpeta: {os.path.join(target_dir, 'raw')}")
-        print(f">>> 3. Extrae el contenido del ZIP en esa carpeta")
-        print(f">>> 4. Ejecuta nuevamente el script\n")
-        
-        # Preguntar al usuario si desea continuar con datos aleatorios
-        use_random = input(">>> ¿Deseas continuar con datos aleatorios para probar? (s/n): ")
-        if use_random.lower().startswith('s'):
-            print(">>> Generando datos aleatorios de prueba...")
-            os.makedirs(emoji_dir, exist_ok=True)
-            
-            # Generar imágenes aleatorias para prueba
-            for i in range(100):  # Crear 100 imágenes aleatorias
-                img_array = np.random.rand(72, 72) * 255  # Valores entre 0-255
-                img = Image.fromarray(img_array.astype('uint8'))
-                img.save(os.path.join(emoji_dir, f"random_{i:03d}.png"))
-            
-            print(f">>> Se generaron 100 imágenes aleatorias en {emoji_dir}")
-            return emoji_dir
-        else:
-            raise Exception("Descarga fallida. Por favor intenta la descarga manual.")
+    url = (
+        "https://github.com/hfg-gmuend/openmoji/"
+        "releases/latest/download/openmoji-72x72-color.zip"
+    )
+    extract_dir = os.path.join(target_dir, "raw")
+    os.makedirs(extract_dir, exist_ok=True)
+
+    # 1) ¿Ya tenemos PNGs?
+    for root, _, files in os.walk(extract_dir):
+        if any(fnmatch.fnmatch(f, "*.png") for f in files):
+            print(f">>> Dataset ya preparado en {root}")
+            return root
+
+    # 2) Descargar + extraer
+    print(">>> Descargando OpenMoji dataset…")
+    resp = requests.get(url, timeout=30)
+    resp.raise_for_status()
+
+    print(">>> Extrayendo archivos…")
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        zf.extractall(extract_dir)
+
+    # 3) Buscar carpeta con PNGs
+    for root, _, files in os.walk(extract_dir):
+        if any(fnmatch.fnmatch(f, "*.png") for f in files):
+            print(f">>> Dataset listo en {root}")
+            return root
+
+    raise RuntimeError("No se encontró ningún PNG tras extraer el ZIP.")
 
 def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
     """
-    Carga los emojis, los redimensiona y los convierte en arrays NumPy.
-    
-    Args:
-        emoji_dir: Directorio con los archivos PNG
-        size: Tamaño final de las imágenes (size x size)
-        max_emojis: Número máximo de emojis a cargar
-        
-    Returns:
-        np.ndarray: Dataset de emojis normalizado [0,1]
+    Carga recursivamente todos los PNG dentro de emoji_dir/** y los procesa.
     """
-    print(f">>> Cargando hasta {max_emojis} emojis de {emoji_dir}...")
-    
-    # Listar todos los archivos PNG
-    if not os.path.exists(emoji_dir):
-        raise FileNotFoundError(f"Directorio no encontrado: {emoji_dir}")
-        
-    files = [f for f in os.listdir(emoji_dir) if f.endswith('.png')]
+    pattern = os.path.join(emoji_dir, "**", "*.png")
+    files = sorted(glob.glob(pattern, recursive=True))[:max_emojis]
+
     if not files:
-        print(f">>> ADVERTENCIA: No se encontraron archivos PNG en {emoji_dir}")
-        # Generar algunos datos aleatorios para evitar errores
-        dataset = np.random.rand(50, size*size)  # 50 imágenes aleatorias
-        return dataset
-    
-    files = files[:max_emojis]  # Limitar la cantidad
-    
-    # Cargar y preprocesar imágenes
+        raise FileNotFoundError(f"No se encontraron PNGs en {emoji_dir}")
+
     dataset = []
     for file in files:
-        img_path = os.path.join(emoji_dir, file)
-        try:
-            # Abrir imagen
-            img = Image.open(img_path).convert('L')  # Convertir a escala de grises
-            
-            # Redimensionar
-            img = img.resize((size, size), Image.LANCZOS if hasattr(Image, 'LANCZOS') else Image.ANTIALIAS)
-            
-            # Convertir a array y normalizar
-            img_array = np.array(img) / 255.0
-            
-            dataset.append(img_array.flatten())
-        except Exception as e:
-            print(f"Error procesando {file}: {e}")
-    
-    return np.array(dataset)
+        img = Image.open(file).convert("L")                # gris
+        img = img.resize((size, size), Image.LANCZOS)      # 28×28
+        dataset.append(np.asarray(img, dtype=np.float32).flatten() / 255.0)
+
+    return np.vstack(dataset)
 
 def save_sample_images(images, shape=(28, 28), path="sample_emojis.png"):
     """

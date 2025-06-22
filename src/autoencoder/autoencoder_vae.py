@@ -1,7 +1,6 @@
-from typing import List, Tuple
+from typing import List
 import numpy as np
 from common.perceptrons.multilayer.network import MLP
-from autoencoder.autoencoder import Autoencoder
 
 class VAE:
     """
