@@ -7,27 +7,19 @@
 #  3) Entrena el VAE usando una función de pérdida especial para VAE
 #  4) Guarda los pesos entrenados y genera muestras
 
-import os
 import json
 import argparse
 import numpy as np
 import requests
-import zipfile
-import io
-import glob
 from PIL import Image
+import matplotlib.pyplot as plt
+import fnmatch, os, zipfile, io, requests, glob, shutil
+from pathlib import Path
 
 # Imports locales
 from autoencoder.autoencoder_vae import VAE
 from autoencoder.vaeloss import VAELoss
 from common.perceptrons.multilayer.vae_trainer import VAETrainer
-
-import fnmatch, os, zipfile, io, requests
-
-import fnmatch, os, zipfile, io, requests
-
-# añade arriba:
-import fnmatch
 
 # --- at the top of runner_vae.py (or datasets/emoji_dataset.py) ---------------
 FACE_MIN = 0x1F600   # 😀
@@ -46,36 +38,57 @@ def is_yellow_face(filename: str) -> bool:
     return FACE_MIN <= cp <= FACE_MAX
 
 
-def download_openmoji(target_dir="data/emojis"):
-    url = (
-        "https://github.com/hfg-gmuend/openmoji/"
-        "releases/latest/download/openmoji-72x72-color.zip"
+def download_openmoji(target_dir="data/emojis", asset_res="618", refresh=False):
+    """
+    Downloads *either* the 72×72 or 618×618 colour PNG asset from the latest
+    OpenMoji release.  Returns the path that contains the PNG files.
+    """
+    asset_name = (
+        "openmoji-72x72-color.zip"  if asset_res == "72"
+        else "openmoji-618x618-color.zip"
     )
-    extract_dir = os.path.join(target_dir, "raw")
-    os.makedirs(extract_dir, exist_ok=True)
+    url = (
+        f"https://github.com/hfg-gmuend/openmoji/releases/latest/download/{asset_name}"
+    )
+    extract_dir = Path(target_dir, "raw")
+    png_dir     = None
 
-    # 1) ¿Ya tenemos PNGs?
+    # -------- 0) Clean up if --refresh  ------------------------------------
+    if refresh and extract_dir.exists():
+        print(">>> --refresh_dataset: borrando dataset anterior…")
+        shutil.rmtree(extract_dir)
+
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    # -------- 1) Reuse if PNGs already there  ------------------------------
     for root, _, files in os.walk(extract_dir):
         if any(fnmatch.fnmatch(f, "*.png") for f in files):
-            print(f">>> Dataset ya preparado en {root}")
-            return root
+            png_dir = root
+            if not refresh:
+                print(f">>> Dataset listo en {png_dir} (reuse)")
+                return png_dir
+            # else: we’ll download again below
+            break
 
-    # 2) Descargar + extraer
-    print(">>> Descargando OpenMoji dataset…")
-    resp = requests.get(url, timeout=30)
+    # -------- 2) Download & extract  ---------------------------------------
+    print(f">>> Descargando {asset_name} …")
+    resp = requests.get(url, timeout=60)
     resp.raise_for_status()
 
     print(">>> Extrayendo archivos…")
     with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
         zf.extractall(extract_dir)
 
-    # 3) Buscar carpeta con PNGs
+    # -------- 3) Locate the PNG folder  ------------------------------------
     for root, _, files in os.walk(extract_dir):
         if any(fnmatch.fnmatch(f, "*.png") for f in files):
-            print(f">>> Dataset listo en {root}")
-            return root
+            png_dir = root
+            break
 
-    raise RuntimeError("No se encontró ningún PNG tras extraer el ZIP.")
+    if png_dir is None:
+        raise RuntimeError("No se encontró ningún PNG tras la extracción.")
+    print(f">>> Dataset listo en {png_dir}")
+    return png_dir
 
 def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
     pattern = os.path.join(emoji_dir, "**", "*.png")
@@ -99,7 +112,6 @@ def save_sample_images(images, shape=(28, 28), path="sample_emojis.png"):
     """
     Guarda una muestra de las imágenes del dataset como una imagen PNG.
     """
-    import matplotlib.pyplot as plt
     
     n = min(25, len(images))
     fig, axes = plt.subplots(5, 5, figsize=(10, 10))
@@ -119,9 +131,7 @@ def save_sample_images(images, shape=(28, 28), path="sample_emojis.png"):
 def save_vae_samples(vae, n_samples=25, shape=(28, 28), path="vae_samples.png"):
     """
     Genera y guarda muestras del VAE entrenado
-    """
-    import matplotlib.pyplot as plt
-    
+    """    
     # Generar muestras
     samples = vae.generate(n_samples=n_samples)
     
@@ -160,6 +170,14 @@ def main():
         "--beta", type=float, default=1.0,
         help="Factor beta para la divergencia KL en VAE (default: 1.0)"
     )
+    parser.add_argument(
+    "--asset_res", choices=["72", "618"], default="618",
+    help="Which OpenMoji asset to download: 72-px (tiny) or 618-px (hi-res)."
+    )
+    parser.add_argument(
+    "--refresh_dataset", action="store_true",
+    help="Force re-download + re-extract the asset even if images already exist."
+    )
     args = parser.parse_args()
 
     config_path = args.config_path
@@ -194,7 +212,7 @@ def main():
     min_delta = cfg.get("min_delta", 1e-4)
 
     # 4) Descargar y cargar el dataset
-    emoji_dir = download_openmoji()
+    emoji_dir = download_openmoji(asset_res=args.asset_res, refresh=args.refresh_dataset)
     X = load_emoji_dataset(emoji_dir, size=img_size, max_emojis=max_emojis)
     
     # Verificar si X está vacío
