@@ -13,30 +13,31 @@ import numpy as np
 import requests
 from PIL import Image
 import matplotlib.pyplot as plt
-import fnmatch, os, zipfile, io, requests, glob, shutil
+import fnmatch, os, zipfile, io, requests, glob, shutil, re
 from pathlib import Path
 
 # Imports locales
 from autoencoder.autoencoder_vae import VAE
-from autoencoder.vaeloss import VAELoss
 from common.perceptrons.multilayer.vae_trainer import VAETrainer
 
-# --- at the top of runner_vae.py (or datasets/emoji_dataset.py) ---------------
-FACE_MIN = 0x1F600   # 😀
-FACE_MAX = 0x1F64F   # 🙏
+# Rango ‘Smileys & Emotion’ completo
+FACE_RANGE = (0x1F600, 0x1F64F)
+
+# Rango ‘Enclosed faces’ (opcional) 1F90C–1F93A, etc.
+# EXTRA_RANGES = [
+#    (0x1F47D, 0x1F47F)  # 👽👾👿  (alien, space invader, angry-devil)
+# ]
+
+ALLOWED_RANGES = [FACE_RANGE]
+# + EXTRA_RANGES  # Si se desea incluir más rangos
 
 def is_yellow_face(filename: str) -> bool:
-    """
-    Returns True if `…/1f600.png` ∈ [FACE_MIN, FACE_MAX].
-    Works even for sequences like '1f979.png' (🥹).
-    """
-    stem = os.path.splitext(os.path.basename(filename))[0]   # '1f600'
+    stem = os.path.splitext(os.path.basename(filename))[0]
     try:
-        cp = int(stem.split('-')[0], 16)  # take first code point in sequences
+        cp = int(stem.split('-')[0], 16)
     except ValueError:
         return False
-    return FACE_MIN <= cp <= FACE_MAX
-
+    return any(lo <= cp <= hi for lo, hi in ALLOWED_RANGES)
 
 def download_openmoji(target_dir="data/emojis", asset_res="618", refresh=False):
     """
@@ -108,25 +109,44 @@ def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
 
     return np.vstack(dataset)
 
-def save_sample_images(images, shape=(28, 28), path="sample_emojis.png"):
+# --------------------------------------------------------------------------
+def save_sample_images(
+    images: np.ndarray,
+    shape=(32, 32),             # coincide con img_size
+    upscale_factor: int = 4,    # 32 px → 128 px
+    path: str = "sample_emojis.png"
+):
     """
-    Guarda una muestra de las imágenes del dataset como una imagen PNG.
+    Guarda una grilla 5×5 de ejemplos en alta resolución.
+    • Reconvierte cada vector plano -> PIL.Image
+    • Re-escala con filtro LANCZOS y lo pasa a matplotlib
     """
-    
+
     n = min(25, len(images))
     fig, axes = plt.subplots(5, 5, figsize=(10, 10))
-    
-    for i in range(5):
-        for j in range(5):
-            idx = i * 5 + j
-            if idx < n:
-                axes[i, j].imshow(images[idx].reshape(shape), cmap='gray')
-            axes[i, j].axis('off')
-    
+
+    h, w = shape
+    new_size = (w * upscale_factor, h * upscale_factor)
+
+    for idx in range(25):
+        ax = axes[idx // 5, idx % 5]
+        ax.axis("off")
+
+        if idx < n:
+            # 1) vector plano → matriz → uint8 [0-255]
+            arr = (images[idx].reshape(shape) * 255).astype(np.uint8)
+
+            # 2) PIL → re-escala con LANCZOS (antialias)
+            img = Image.fromarray(arr, mode="L").resize(new_size, Image.LANCZOS)
+
+            # 3) mostrar
+            ax.imshow(img, cmap="gray")
+
     plt.tight_layout()
-    plt.savefig(path)
+    plt.savefig(path, dpi=150)     # dpi alto -> archivo más nítido
     plt.close()
     print(f">>> Muestra guardada en {path}")
+
 
 def save_vae_samples(vae, n_samples=25, shape=(28, 28), path="vae_samples.png"):
     """
@@ -178,12 +198,21 @@ def main():
     "--refresh_dataset", action="store_true",
     help="Force re-download + re-extract the asset even if images already exist."
     )
+    parser.add_argument(
+        "--beta_final", type=float, default=1.0,
+        help="Valor final de β (β-VAE). Por defecto 1.0"
+    )
+    parser.add_argument(
+        "--kl_ramp_epochs", type=int, default=0,
+        help="Número de épocas para subir β linealmente de 0→β_final (0 = sin annealing)"
+    )
     args = parser.parse_args()
 
     config_path = args.config_path
     max_emojis = args.max_emojis
     img_size = args.img_size
-    beta = args.beta
+    beta_final = args.beta_final
+    kl_ramp_epochs = args.kl_ramp_epochs
 
     # Verificar que el archivo exista
     if not os.path.exists(config_path):
@@ -193,13 +222,22 @@ def main():
     with open(config_path, "r") as f:
         cfg = json.load(f)
 
-    # 2) Arquitectura del encoder/decoder
+    # 2) Arquitectura del encoder/decoder  --------------------------------
+    in_dim = img_size * img_size
+
     enc_sizes = cfg["encoder"]["layer_sizes"]
-    enc_acts = cfg["encoder"]["activations"]
+    enc_acts  = cfg["encoder"]["activations"]
     dec_sizes = cfg["decoder"]["layer_sizes"]
-    dec_acts = cfg["decoder"]["activations"]
-    latent_dim = cfg.get("latent_dim", enc_sizes[-1] // 2)  # Dimensión del espacio latente
-    dropout_rate = cfg.get("dropout_rate", 0.0)
+    dec_acts  = cfg["decoder"]["activations"]
+
+    latent_dim   = cfg.get("latent_dim", enc_sizes[-1] // 2)
+    dropout_rate = cfg.get("dropout_rate", 0.0)     
+
+    # Asegurar primer y último layer
+    if enc_sizes[0] != in_dim:
+        enc_sizes[0] = in_dim
+    if dec_sizes[-1] != in_dim:
+        dec_sizes[-1] = in_dim
 
     # 3) Parámetros de entrenamiento
     reconstruction_loss = cfg.get("reconstruction_loss", "mse")  # mse o bce
@@ -221,6 +259,14 @@ def main():
         X = np.random.rand(50, img_size*img_size)  # 50 imágenes aleatorias
     
     print(f">>> Dataset cargado: {X.shape[0]} imágenes de {X.shape[1]} elementos")
+
+    # ---- COMPROBACIÓN RÁPIDA ------------
+    face_regex = re.compile(r'^1f6[0-4][0-9a-f]\.png$')   # 1F600-1F64F
+    files_in_range = [
+        f for f in glob.glob(f"{emoji_dir}/**/*.png", recursive=True)
+        if face_regex.match(os.path.basename(f).lower())
+    ]
+    print(f">>> PNG dentro de rango: {len(files_in_range)}")
     
     # Guardar muestra de imágenes
     save_sample_images(X, shape=(img_size, img_size), path="data/sample_emojis.png")
@@ -239,16 +285,13 @@ def main():
         dropout_rate=dropout_rate
     )
 
-    # 7) Crear y configurar la función de pérdida VAE
-    vae_loss = VAELoss(reconstruction_loss_name=reconstruction_loss, beta=beta)
-    vae_loss.vae_model = vae  # Conectar el modelo con la función de pérdida
-
-    # 8) Instanciar el Trainer con pérdida personalizada
+    # 7) Instanciar el Trainer con pérdida personalizada
     print(">>> Configurando entrenador...")
     trainer = VAETrainer(
         vae=vae,
         loss_name=reconstruction_loss,
-        beta=beta,
+        beta=beta_final,
+        kl_ramp_epochs=kl_ramp_epochs,
         optimizer_name=optimizer_name,
         optim_kwargs=optim_kwargs,
         batch_size=batch_size,
@@ -259,12 +302,13 @@ def main():
         min_delta=min_delta
     )
 
-    # 9) Entrenamiento
-    print(f">>> Entrenando VAE (X → X) con beta={beta}...")
+
+    # 8) Entrenamiento
+    print(f">>> Entrenando VAE (X → X) con beta={beta_final}...")
     vae.train_mode()
     loss_history = trainer.fit(X, Y)
 
-    # 10) Guardar pesos y pérdida
+    # 9) Guardar pesos y pérdida
     os.makedirs("checkpoints", exist_ok=True)
     w_path = "checkpoints/vae_weights.npz"
     print(f">>> Guardando pesos en '{w_path}'...")
@@ -274,7 +318,7 @@ def main():
     np.save(loss_path, np.array(loss_history, dtype=np.float32))
     print(f">>> Historial de pérdida guardado en '{loss_path}'.")
 
-    # 11) Generar muestras con el VAE entrenado
+    # 10) Generar muestras con el VAE entrenado
     print(">>> Generando nuevas muestras con el VAE...")
     vae.eval_mode()
     save_vae_samples(vae, n_samples=25, shape=(img_size, img_size), path="checkpoints/vae_samples.png")
