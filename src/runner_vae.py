@@ -91,16 +91,21 @@ def download_openmoji(target_dir="data/emojis", asset_res="618", refresh=False):
     print(f">>> Dataset listo en {png_dir}")
     return png_dir
 
-def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
+def load_emoji_dataset(emoji_dir, size=28, max_emojis=500, faces_only=True):
     pattern = os.path.join(emoji_dir, "**", "*.png")
     all_files = sorted(glob.glob(pattern, recursive=True))
-    face_files = [f for f in all_files if is_yellow_face(f)]
 
-    if not face_files:
-        raise RuntimeError("No yellow-face emojis found — check paths or ranges.")
+    if faces_only:
+        files = [f for f in all_files if is_yellow_face(f)]
+    else:
+        files = all_files
 
-    files = face_files[:max_emojis]           # keep at most N
-    print(f">>> Usando {len(files)} yellow faces de {len(all_files)} PNGs totales")
+    if not files:
+        raise RuntimeError("No PNGs found with the selected filter")
+
+    files = files[:max_emojis]
+    print(f">>> Usando {len(files)} PNGs de {len(all_files)} totales "
+          f"({'solo caras' if faces_only else 'todos'})")
 
     dataset = []
     for file in files:
@@ -108,6 +113,7 @@ def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
         dataset.append(np.asarray(img, dtype=np.float32).flatten() / 255.0)
 
     return np.vstack(dataset)
+
 
 # --------------------------------------------------------------------------
 def save_sample_images(
@@ -206,6 +212,11 @@ def main():
         "--kl_ramp_epochs", type=int, default=0,
         help="Número de épocas para subir β linealmente de 0→β_final (0 = sin annealing)"
     )
+    parser.add_argument(
+        "--faces_only", action="store_true",
+        help="Si se indica, entrena solo con emojis del rango 1F600–1F64F"
+    )
+
     args = parser.parse_args()
 
     config_path = args.config_path
@@ -251,7 +262,7 @@ def main():
 
     # 4) Descargar y cargar el dataset
     emoji_dir = download_openmoji(asset_res=args.asset_res, refresh=args.refresh_dataset)
-    X = load_emoji_dataset(emoji_dir, size=img_size, max_emojis=max_emojis)
+    X = load_emoji_dataset(emoji_dir, size=img_size, max_emojis=max_emojis, faces_only=args.faces_only)
     
     # Verificar si X está vacío
     if len(X) == 0:
@@ -259,14 +270,6 @@ def main():
         X = np.random.rand(50, img_size*img_size)  # 50 imágenes aleatorias
     
     print(f">>> Dataset cargado: {X.shape[0]} imágenes de {X.shape[1]} elementos")
-
-    # ---- COMPROBACIÓN RÁPIDA ------------
-    face_regex = re.compile(r'^1f6[0-4][0-9a-f]\.png$')   # 1F600-1F64F
-    files_in_range = [
-        f for f in glob.glob(f"{emoji_dir}/**/*.png", recursive=True)
-        if face_regex.match(os.path.basename(f).lower())
-    ]
-    print(f">>> PNG dentro de rango: {len(files_in_range)}")
     
     # Guardar muestra de imágenes
     save_sample_images(X, shape=(img_size, img_size), path="data/sample_emojis.png")
