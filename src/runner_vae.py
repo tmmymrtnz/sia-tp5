@@ -29,6 +29,23 @@ import fnmatch, os, zipfile, io, requests
 # añade arriba:
 import fnmatch
 
+# --- at the top of runner_vae.py (or datasets/emoji_dataset.py) ---------------
+FACE_MIN = 0x1F600   # 😀
+FACE_MAX = 0x1F64F   # 🙏
+
+def is_yellow_face(filename: str) -> bool:
+    """
+    Returns True if `…/1f600.png` ∈ [FACE_MIN, FACE_MAX].
+    Works even for sequences like '1f979.png' (🥹).
+    """
+    stem = os.path.splitext(os.path.basename(filename))[0]   # '1f600'
+    try:
+        cp = int(stem.split('-')[0], 16)  # take first code point in sequences
+    except ValueError:
+        return False
+    return FACE_MIN <= cp <= FACE_MAX
+
+
 def download_openmoji(target_dir="data/emojis"):
     url = (
         "https://github.com/hfg-gmuend/openmoji/"
@@ -61,19 +78,19 @@ def download_openmoji(target_dir="data/emojis"):
     raise RuntimeError("No se encontró ningún PNG tras extraer el ZIP.")
 
 def load_emoji_dataset(emoji_dir, size=28, max_emojis=500):
-    """
-    Carga recursivamente todos los PNG dentro de emoji_dir/** y los procesa.
-    """
     pattern = os.path.join(emoji_dir, "**", "*.png")
-    files = sorted(glob.glob(pattern, recursive=True))[:max_emojis]
+    all_files = sorted(glob.glob(pattern, recursive=True))
+    face_files = [f for f in all_files if is_yellow_face(f)]
 
-    if not files:
-        raise FileNotFoundError(f"No se encontraron PNGs en {emoji_dir}")
+    if not face_files:
+        raise RuntimeError("No yellow-face emojis found — check paths or ranges.")
+
+    files = face_files[:max_emojis]           # keep at most N
+    print(f">>> Usando {len(files)} yellow faces de {len(all_files)} PNGs totales")
 
     dataset = []
     for file in files:
-        img = Image.open(file).convert("L")                # gris
-        img = img.resize((size, size), Image.LANCZOS)      # 28×28
+        img = Image.open(file).convert("L").resize((size, size), Image.LANCZOS)
         dataset.append(np.asarray(img, dtype=np.float32).flatten() / 255.0)
 
     return np.vstack(dataset)
