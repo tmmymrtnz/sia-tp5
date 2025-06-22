@@ -1,41 +1,105 @@
-# TP5 SIA - Deep Learning
+# TP 5 – SIA · Deep Learning  
+*Autoencoders, Denoising AE y Variational AE*
 
-[Enunciado](docs/sia-tp5.pdf)
+> **Sistemas de Inteligencia Artificial**  
+> ITBA – 2025  
 
-## Instalación
+[📑 Enunciado oficial](docs/sia-tp5.pdf)
 
-Parado en la carpeta del tp4 ejecutar
+---
 
-```sh
-pip install -r requirements.txt
-```
+## Introducción
 
-para instalar las dependencias necesarias en el ambiente virtual
+Este TP explora tres variantes de autoencoders sobre distintos datasets:
 
-## Ejecución
+* **AE básico** – aprende los 32 caracteres 5 × 7 de `font.h`  
+* **Denoising AE** – quita ruido binario de los mismos caracteres  
+* **VAE** – genera emojis (OpenMoji) y disentangled sprites (dSprites)
 
-### Ex 1.1 - Red de Kohonen
+El código es *NumPy-only* y corre en CPU en minutos.
 
-```sh
-python -m src.tp4.ex1.runner_kohonen.py configs/tp4/kohonen/kohonen_europe.json
-```
+---
 
-### Ex 1.2 Modelo de Oja
+## ⚙️ Instalación rápida
 
-### Ex 2.1 Modelo de Hopfield
+1. Clonar el repositorio  
+   ```git clone https://github.com/tu-usuario/sia-tp5.git```
+2. Crear y activar entorno virtual  
+   ```python -m venv venv && source venv/bin/activate```
+3. Instalar dependencias  
+   ```pip install -r requirements.txt```
 
-## Análisis
+---
 
-```sh
-python -m src.analysis.tp4.kohonen.hyperparam_analysis \
-       --data  data/tp4/europe.csv \
-       --label Country \
-       --out   plots/kohonen_scan
+## ▶️ Ejecución
 
-## Tests
+### Ejercicio 1a — Autoencoder básico (font.h)
 
-### Red de Kohonen
+Runner `src/runner_autoencoder.py`  
+Flags principales  
+• `config_path` – JSON con arquitectura  
+• `font_path`  – ruta a font.h  
 
-```sh
-pytest tests/test_som.py -q
-```
+Ejemplo mínimo  
+```python src/runner_autoencoder.py configs/ae.json data/font.h```
+
+Genera  
+checkpoints/ae_weights.npz   ·  checkpoints/loss_history.npy
+
+---
+
+### Ejercicio 1b — Denoising Autoencoder
+
+Runner `src/runner_dae.py`  
+Flags extra  
+• `noise_level` (en el JSON) – prob. de voltear cada bit  
+
+Ejemplo con 10 % de ruido  
+```python src/runner_dae.py configs/dae.json data/font.h```
+
+Salida adicional: métrica *bits error* por carácter.
+
+---
+
+### Ejercicio 2 — Variational AE
+
+Runner `src/runner_vae.py`  
+Flags clave  
+• `--dataset`        faces_only | emoji_full | dsprites  
+• `--img_size`       28/32/64 (según dataset)  
+• `--beta_final`     valor final de β  
+• `--kl_ramp_epochs` épocas para annealing 0 → β  
+
+Comandos sugeridos  
+
+| Dataset | Comando | Comentario |
+|---------|---------|------------|
+| Caras amarillas (197) | ```python src/runner_vae.py configs/vae.json --dataset faces_only``` | demo rápida |
+| OpenMoji completo | ```python src/runner_vae.py configs/vae.json --dataset emoji_full --max_emojis 2000``` | ~4 200 PNG |
+| dSprites 64×64 | ```python src/runner_vae.py configs/vae.json --dataset dsprites --beta_final 4 --kl_ramp_epochs 100``` | muestra disentanglement |
+
+Cada run guarda en  
+checkpoints/`<dataset>`_img`<size>`_beta`<β>`_`<timestamp>`/  
+    vae_weights.npz · loss_history.npy · vae_generated.png  
+
+Un *sample raw* del dataset queda en  
+data/sample_`<dataset>`.png
+
+---
+
+## 📁 Estructura de carpetas
+
+src/              · implementación AE / VAE / trainer  
+configs/          · JSON de hiper-parámetros  
+data/             · datasets y samples de referencia  
+checkpoints/      · pesos + salidas organizadas por experimento  
+docs/             · enunciado y apuntes útiles  
+
+---
+
+## 📊 Análisis de resultados  *(pendiente)*
+
+Se agregarán:  
+• gráficas de convergencia,  
+• proyección 2-D del espacio latente (AE) y  
+• interpolaciones en el VAE con distintas β.

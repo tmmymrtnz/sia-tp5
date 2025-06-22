@@ -7,3 +7,4 @@ tensorflow
 optuna
 tqdm
 pytest
+kaggle
