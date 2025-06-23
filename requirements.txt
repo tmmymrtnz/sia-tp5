@@ -3,7 +3,8 @@ pandas
 matplotlib
 scikit-learn
 seaborn
-tensorflow
+tensorflow>=2.14
+tensorflow-datasets>=4.9
 optuna
 tqdm
 pytest
