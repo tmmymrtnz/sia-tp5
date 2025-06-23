@@ -2,10 +2,12 @@ import numpy as np
 import sys
 import os
 import matplotlib.pyplot as plt
+import json
 
 sys.path.insert(0, "src")
 from autoencoder.autoencoder import Autoencoder
-
+from runner_autoencoder import parse_font_h
+from common.perceptrons.multilayer.trainer import Trainer
 
 def decode_latent_point(x: float, y: float, ae: Autoencoder) -> np.ndarray:
     z = np.array([[x, y]])  # shape (1, 2)
@@ -13,64 +15,78 @@ def decode_latent_point(x: float, y: float, ae: Autoencoder) -> np.ndarray:
     out_bin = (out > 0.5).astype(int)[0]
     return out_bin.reshape(7, 5)
 
-
-def matrix_to_string(matrix: np.ndarray) -> str:
-    return "\n".join("".join("*" if x else " " for x in row) for row in matrix)
-
-
-def print_latent_grid(ae: Autoencoder, x_range=(-1.5, 1.5), y_range=(-1.5, 1.5), steps=5):
+def plot_latent_grid(ae: Autoencoder, x_range, y_range, steps):
     x_vals = np.linspace(*x_range, steps)
-    y_vals = np.linspace(*y_range, steps)[::-1]  # invert Y so top is top
-
-    print("\n=== Generación de caracteres en la grilla del espacio latente ===\n")
-
-    char_matrices = [[decode_latent_point(x, y, ae) for x in x_vals] for y in y_vals]
-
-    # Imprimir una fila por vez (7 líneas por fila, cada celda de 5 caracteres)
-    for row in char_matrices:
-        for i in range(7):  # cada letra tiene 7 filas
-            line = "   ".join("".join("*" if x else " " for x in char[i]) for char in row)
-            print(line)
-        print("\n")  # espacio entre filas
-
-
-def plot_latent_grid(ae: Autoencoder, x_range=(-1.2, 1.2), y_range=(-1.2, 1.2), steps=6):
-    x_vals = np.linspace(*x_range, steps)
-    y_vals = np.linspace(*y_range, steps)[::-1]
+    y_vals = np.linspace(*y_range, steps)[::-1]  # de arriba hacia abajo
 
     fig, axs = plt.subplots(steps, steps, figsize=(steps, steps))
-    plt.subplots_adjust(wspace=0.2, hspace=0.2)
+    plt.subplots_adjust(wspace=0.1, hspace=0.1)
 
     for i, y in enumerate(y_vals):
         for j, x in enumerate(x_vals):
             ax = axs[i, j]
             letter = decode_latent_point(x, y, ae)
-
             ax.imshow(letter, cmap="Greys", vmin=0, vmax=1)
             ax.axis("off")
 
-    plt.suptitle("Grid de generación desde el espacio latente", fontsize=14)
     plt.tight_layout()
     plt.show()
 
 def main():
-    weights_path = "checkpoints/ae_weights_A.npz"
+    config_path = "configs/ex1/optimal.json"
+    font_path = "data/font.h"
 
-    if not os.path.exists(weights_path):
-        raise FileNotFoundError("Missing weights at checkpoints/ae_weights_A.npz")
+    if not os.path.exists(config_path):
+        raise FileNotFoundError("Missing config file at configs/ex1/optimal.json")
+    if not os.path.exists(font_path):
+        raise FileNotFoundError("Missing font.h")
+
+    X = parse_font_h(font_path)
+
+    with open(config_path, "r") as f:
+        cfg = json.load(f)
 
     ae = Autoencoder(
-        encoder_sizes=[35, 64, 32, 16, 8, 2],
-        encoder_activations=["tanh", "tanh", "tanh", "tanh", "identity"],
-        decoder_sizes=[2, 8, 16, 32, 64, 35],
-        decoder_activations=["tanh", "tanh", "tanh", "tanh", "sigmoid"]
+        encoder_sizes       = cfg["encoder"]["layer_sizes"],
+        encoder_activations = cfg["encoder"]["activations"],
+        decoder_sizes       = cfg["decoder"]["layer_sizes"],
+        decoder_activations = cfg["decoder"]["activations"]
     )
-    ae.load_weights(weights_path)
+
+    ae.train_mode()
+    trainer = Trainer(
+        net             = ae,
+        loss_name       = cfg["loss"],
+        optimizer_name  = cfg["optimizer"],
+        optim_kwargs    = {"learning_rate": cfg["lr"]},
+        batch_size      = cfg["batch_size"],
+        max_epochs      = cfg["max_epochs"],
+        log_every       = cfg["log_every"],
+        early_stopping  = True,
+        patience        = cfg["patience"],
+        min_delta       = cfg["min_delta"]
+    )
+    trainer.fit(X, X)
     ae.eval_mode()
 
-    print_latent_grid(ae, x_range=(-1.2, 1.2), y_range=(-1.2, 1.2), steps=6)
-    plot_latent_grid(ae, x_range=(-1.2, 1.2), y_range=(-1.2, 1.2), steps=6)
+    # Obtener latentes reales
+    z = ae.encoder.forward(X)  # (32, 2)
+    x_min, x_max = z[:, 0].min(), z[:, 0].max()
+    y_min, y_max = z[:, 1].min(), z[:, 1].max()
 
+    # Expandir márgenes un poco
+    margin = 1.0
+    x_range = (x_min - margin, x_max + margin)
+    y_range = (y_min - margin, y_max + margin)
+
+    # Mostrar rangos
+    print(f"Espacio latente X: {x_range}")
+    print(f"Espacio latente Y: {y_range}")
+
+    # Graficar grids
+    for steps in [5, 10, 20]:
+        print(f"\nGenerando grid de {steps}x{steps} …")
+        plot_latent_grid(ae, x_range, y_range, steps)
 
 if __name__ == "__main__":
     main()
