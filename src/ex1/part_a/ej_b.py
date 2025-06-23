@@ -2,13 +2,15 @@
 # src/experimentos_archs.py
 #
 # Este script lee un JSON con varias configuraciones (Experiment A, B, C, …),
-# entrena un Autoencoder con cada una y guarda resultados en disco.
+# entrena un Autoencoder con cada una, grafica evolución de pérdida y errores,
+# y guarda resultados en disco.
 
 import json
 import numpy as np
 import os
 import argparse
 import sys
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, "src")
 
@@ -20,7 +22,7 @@ def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
     """
     Entrena un Autoencoder según conf_exp (la subconfig del experimento exp_id),
     usando parámetros comunes en global_conf. Devuelve:
-      (pérdida_final, errores_por_char (array de tamaño 32), epochs_totales)
+      (pérdida_final, errores_por_char (array de tamaño 32), epochs_totales, loss_hist)
     """
     # → fijar semilla para inicializar pesos idénticos en cada experimento
     np.random.seed(0)
@@ -34,7 +36,6 @@ def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
         dropout_rate        = conf_exp.get("dropout_rate", 0.0)
     )
 
-    # Resto inalterado…
     trainer = Trainer(
         net             = ae,
         loss_name       = conf_exp["loss"],
@@ -64,9 +65,21 @@ def entrenar_evaluar(exp_id, conf_exp, global_conf, X):
     diffs   = np.abs(X_bin - X)
     errores = diffs.sum(axis=1).astype(int)
 
-    perdida_final = loss_hist[-1]
-    return perdida_final, errores, epochs_tot
+    return loss_hist[-1], errores, epochs_tot, loss_hist
 
+def plot_loss_curve(exp_id, loss_hist):
+    plt.plot(loss_hist, label=f"Exp {exp_id}")
+
+def plot_correct_patterns_curve(exp_id, loss_hist, model, X):
+    correct_counts = []
+    for epoch_output in loss_hist:
+        X_recon = model.forward(X)
+        X_bin = (X_recon > 0.5).astype(int)
+        diffs = np.abs(X_bin - X)
+        errors = diffs.sum(axis=1).astype(int)
+        correct = np.sum(errors <= 1)
+        correct_counts.append(correct)
+    plt.plot(correct_counts, label=f"Exp {exp_id}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -100,7 +113,7 @@ def main():
     # 4) Recorrer cada experimento definido en el JSON
     for exp_id, conf_exp in cfg["experiments"].items():
         print(f"\n>>> Ejecutando experimento {exp_id} ...")
-        loss_final, errores_por_char, epocas = entrenar_evaluar(exp_id, conf_exp, cfg, X)
+        loss_final, errores_por_char, epocas, loss_hist = entrenar_evaluar(exp_id, conf_exp, cfg, X)
 
         max_error = int(errores_por_char.max())
         avg_error = float(errores_por_char.mean())
@@ -120,12 +133,24 @@ def main():
         print(f"   → Experimento {exp_id}: loss={loss_final:.6f}, epochs={epocas}, "
               f"max_error_bits={max_error}, avg_error_bits={avg_error:.2f}")
 
+        # Graficar curva de pérdida
+        plot_loss_curve(exp_id, loss_hist)
+
     # 5) Guardar todos los resultados juntos
     with open("experimentos/todos_resultados.json", "w") as f:
         json.dump(resultados, f, indent=2)
 
     print("\n>>> Todos los experimentos completados. Resultados en carpeta 'experimentos/'.")
 
+    # Mostrar gráfico final de pérdidas
+    plt.title("Curva de pérdida por experimento")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("experimentos/curvas_loss.png")
+    plt.show()
 
 if __name__ == "__main__":
     main()

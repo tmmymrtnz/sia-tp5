@@ -1,6 +1,52 @@
 {
   "font_h_path": "data/font.h",
   "experiments": {
+    "A": {
+      "encoder": {
+        "layer_sizes": [35, 20, 6, 2],
+        "activations": ["sigmoid", "sigmoid", "identity"]
+      },
+      "decoder": {
+        "layer_sizes": [2, 6, 20, 35],
+        "activations": ["sigmoid", "sigmoid", "sigmoid"]
+      },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.001
+    },
+    "B": {
+      "encoder": {
+        "layer_sizes": [35, 16, 2],
+        "activations": ["sigmoid", "identity"]
+      },
+      "decoder": {
+        "layer_sizes": [2, 16, 35],
+        "activations": ["sigmoid", "sigmoid"]
+      },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.001
+    },
+    "E": {
+      "encoder": {
+        "layer_sizes": [35, 12, 2],
+        "activations": ["sigmoid", "identity"]
+      },
+      "decoder": {
+        "layer_sizes": [2, 12, 35],
+        "activations": ["sigmoid", "sigmoid"]
+      },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.001
+    },
+    "F": {
+      "encoder": { "layer_sizes": [35, 20, 6, 2], "activations": ["tanh", "tanh", "identity"] },
+      "decoder": { "layer_sizes": [2, 6, 20, 35], "activations": ["tanh", "tanh", "sigmoid"] },
+      "loss": "bce",
+      "optimizer": "adam",
+      "lr": 0.001
+    },
     "H": {
       "encoder": { "layer_sizes": [35, 32, 16, 8, 2], "activations": ["tanh", "tanh", "tanh", "identity"] },
       "decoder": { "layer_sizes": [2, 8, 16, 32, 35], "activations": ["tanh", "tanh", "tanh", "tanh", "sigmoid"] },
