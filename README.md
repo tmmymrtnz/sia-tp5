@@ -34,30 +34,38 @@ El código es *NumPy-only* y corre en CPU en minutos.
 ## ▶️ Ejecución
 
 ### Ejercicio 1a — Autoencoder básico (font.h)
+1. Para encontrar la arquitectura óptima, se debe correr:
+   ```bash
+   python src/ex1/part_a/ej_b.py configs/ex1/config_a_1.json
+   ```
+   Donde el archivo de configuración contiene distintos experimentos y el directorio de font.h
+   En el directorio `/experimentos` se guardará el gráfico de pérdida por época y un archivo json con los resultados finales de cada experimento.
 
-Runner `src/runner_autoencoder.py`  
-Flags principales  
-• `config_path` – JSON con arquitectura  
-• `font_path`  – ruta a font.h  
+2. Para graficar el espacio latente, se debe correr:
+   ```bash 
+   python src/ex1/part_a/ej_c.py
+   ```
+   Tomará directamente el archivo font.h y la configuración `configs/ex1/optimal.json` donde se encuentran los detalles de la arquitectura óptima hallada en el item anterior.
+   Genera un gráfico del espacio latente 2D con los caracteres proyectados sobre el punto (z) que los codifica.
 
-Ejemplo mínimo  
-```python src/runner_autoencoder.py configs/ae.json data/font.h```
-
-Genera  
-checkpoints/ae_weights.npz   ·  checkpoints/loss_history.npy
+3. Para generar nuevas letras que no pertenecen al conjunto de entrenamiento, se debe correr:
+   ```bash
+   python src/ex1/part_a/ej_d.py
+   ```
+   Entrena al autoencoder con las configuraciones óptimas de `configs/ex1/optimal.json`, luego se realizan tres gráficos: primero se divide el espacio latente en 25 bloques (5x5), cada uno con un punto central (x,y). Se usa este punto (x,y) como entrada del decodificador, generando un caracter para este punto. Se genera un gráfico con los 25 caracteres generados. Se repite el proceso para 10x10 y 20x20.
 
 ---
 
 ### Ejercicio 1b — Denoising Autoencoder
-
-Runner `src/runner_dae.py`  
-Flags extra  
-• `noise_level` (en el JSON) – prob. de voltear cada bit  
-
-Ejemplo con 10 % de ruido  
-```python src/runner_dae.py configs/dae.json data/font.h```
-
-Salida adicional: métrica *bits error* por carácter.
+Para distorsionar las entradas y estudiar la capacidad del Autoencoder de eliminar el ruido, se debe correr:
+```bash
+python src/analisis_dae.py configs/ex1/optimal.json data/font.h
+```
+En la configuración se especifica la arquitectura óptima y el nivel de ruido para la prueba.
+Se harán 5 ejecuciones de esta prueba de denoising.
+Se generarán tres archivos en `/checkpoints`
+* `dae_loss_avg_plot.png` con la pérdida promedio a lo largo de las épocas en las 5 ejecuciones
+* `ejemplo_mejor.png` y `ejemplo_peor.png` con una visualización de la entrada con ruido, la reconstrucción del AE y la entrada original para el caracter con menos bits de error en promedio, y el caracter con más bits de error en promedio.
 
 ---
 
