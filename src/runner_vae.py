@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# runner_vae.py – Entrena un VAE sobre distintos datasets ligeros.
+# runner_vae.py — Entrena un VAE sobre datasets ligeros (OpenMoji, dSprites,
+#                 FFHQ-128 thumbnails y LFW vía TensorFlow-Datasets).
 
 import argparse, json, os, io, glob, shutil, zipfile, urllib.request
 from pathlib import Path
@@ -12,9 +13,11 @@ from PIL import Image
 
 from autoencoder.autoencoder_vae import VAE
 from common.perceptrons.multilayer.vae_trainer import VAETrainer
+import tensorflow_datasets as tfds, tensorflow as tf
 
-# ---------------------------- filtros --------------------------------------
-FACE_RANGE = (0x1F600, 0x1F64F)        # 😀 … 🙏
+
+# ───────────────────────── Smileys filter (OpenMoji) ────────────────────────
+FACE_RANGE = (0x1F600, 0x1F64F)  # 😀 … 🙏
 
 def is_yellow_face(fname: str) -> bool:
     stem = os.path.splitext(os.path.basename(fname))[0]
@@ -25,7 +28,7 @@ def is_yellow_face(fname: str) -> bool:
     lo, hi = FACE_RANGE
     return lo <= cp <= hi
 
-# ------------------------ descarga OpenMoji ---------------------------------
+# ─────────────────────────── OpenMoji download/load ─────────────────────────
 def download_openmoji(target="data/emojis", res="618", refresh=False) -> Path:
     asset = "openmoji-72x72-color.zip" if res == "72" else "openmoji-618x618-color.zip"
     url   = f"https://github.com/hfg-gmuend/openmoji/releases/latest/download/{asset}"
@@ -36,8 +39,9 @@ def download_openmoji(target="data/emojis", res="618", refresh=False) -> Path:
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
 
-    for r, _, files in os.walk(root):
-        if any(f.endswith(".png") for f in files):
+    # Re-usar si ya hay PNGs
+    for r, _, f in os.walk(root):
+        if any(fn.endswith(".png") for fn in f):
             print(f">>> Dataset listo en {r} (reuse)")
             return Path(r)
 
@@ -46,13 +50,12 @@ def download_openmoji(target="data/emojis", res="618", refresh=False) -> Path:
     with zipfile.ZipFile(io.BytesIO(buf)) as zf:
         zf.extractall(root)
 
-    for r, _, files in os.walk(root):
-        if any(f.endswith(".png") for f in files):
+    for r, _, f in os.walk(root):
+        if any(fn.endswith(".png") for fn in f):
             print(f">>> Dataset listo en {r}")
             return Path(r)
     raise RuntimeError("OpenMoji: no se encontraron PNG tras la extracción.")
 
-# ---------------------- carga de PNGs --------------------------------------
 def load_emoji_dataset(emoji_dir: Path, size=32, max_imgs=500, faces_only=True):
     files = sorted(glob.glob(str(emoji_dir / "**/*.png"), recursive=True))
     if faces_only:
@@ -68,37 +71,56 @@ def load_emoji_dataset(emoji_dir: Path, size=32, max_imgs=500, faces_only=True):
         data.append(np.asarray(img, np.float32).flatten() / 255.0)
     return np.vstack(data)
 
-# ------------------------- dSprites ----------------------------------------
+# ───────────────────────────── dSprites (64×64) ─────────────────────────────
 def load_dsprites(max_imgs=500):
-    url  = ("https://github.com/google-deepmind/dsprites-dataset/"
-            "raw/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz")
+    url  = "https://github.com/google-deepmind/dsprites-dataset/raw/master/dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz"
     path = Path("data/dsprites.npz")
     if not path.exists():
         print(">>> Descargando dSprites…")
         urllib.request.urlretrieve(url, path)
-    imgs = np.load(path)["imgs"][:max_imgs]   # (N, 64, 64)
+    imgs = np.load(path)["imgs"][:max_imgs]               # (N, 64, 64)
     return imgs.astype("float32").reshape(len(imgs), -1)
 
-# ----------------- helper de grilla ----------------------------------------
+# ─────────────────────── LFW-deepfunneled vía TF-Datasets ───────────────────
+def load_lfw_tfds(max_imgs=8_000, img_px=64):
+    print(">>> Cargando LFW-deepfunneled con TF-Datasets… (auto-download/cache)")
+    ds = tfds.load("lfw", split="train", shuffle_files=False, as_supervised=False)
+
+    ds = (
+        ds.map(
+            lambda x: tf.image.rgb_to_grayscale(
+                tf.image.resize(x["image"], (img_px, img_px))
+            ) / 255.0,
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
+        .take(max_imgs)
+    )
+
+    # tfds.as_numpy convierte cada elemento del pipeline a ndarray
+    return np.stack([img.reshape(-1) for img in tfds.as_numpy(ds)])
+
+
+# ────────────────────────────── helper grilla ───────────────────────────────
 def save_grid(vectors, shape, out="grid.png", upscale=4):
-    n = min(25, len(vectors))
-    h, w = shape
-    sz   = (w*upscale, h*upscale)
+    n, (h, w) = min(25, len(vectors)), shape
+    big = (w*upscale, h*upscale)
     fig, ax = plt.subplots(5, 5, figsize=(10, 10))
     for i in range(25):
         a = ax[i//5, i%5]; a.axis("off")
         if i < n:
             arr = (vectors[i].reshape(shape)*255).astype("uint8")
-            img = Image.fromarray(arr, mode="L").resize(sz, Image.LANCZOS)
+            img = Image.fromarray(arr, mode="L").resize(big, Image.LANCZOS)
             a.imshow(img, cmap="gray")
     plt.tight_layout(); plt.savefig(out, dpi=150); plt.close()
     print(f">>> Grilla guardada en {out}")
 
-# ------------------------------ main ---------------------------------------
+# ────────────────────────────────── main ────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("config_path")
-    ap.add_argument("--dataset", choices=["faces_only", "emoji_full", "dsprites"],
+    ap.add_argument("--dataset",
+                    choices=["faces_only", "emoji_full",
+                             "dsprites", "faces_ffhq", "faces_lfw"],
                     default="faces_only")
     ap.add_argument("--img_size", type=int, default=32)
     ap.add_argument("--max_emojis", type=int, default=500)
@@ -108,39 +130,45 @@ def main():
     ap.add_argument("--kl_ramp_epochs", type=int, default=0)
     args = ap.parse_args()
 
-    # ------------------ cargar dataset ------------------------------------
+    # ────────────── carga / pre-procesado del dataset elegido ──────────────
     if args.dataset in ("faces_only", "emoji_full"):
         emoji_dir = download_openmoji(res=args.asset_res, refresh=args.refresh_dataset)
-        faces = args.dataset == "faces_only"
         X = load_emoji_dataset(emoji_dir, size=args.img_size,
-                               max_imgs=args.max_emojis, faces_only=faces)
+                               max_imgs=args.max_emojis,
+                               faces_only=(args.dataset == "faces_only"))
+
     elif args.dataset == "dsprites":
         X = load_dsprites(max_imgs=args.max_emojis)
         args.img_size = 64
+
+    elif args.dataset == "faces_lfw":
+        X = load_lfw_tfds(max_imgs=args.max_emojis)
+        args.img_size = 64
+
     else:
         raise ValueError("Dataset no soportado.")
 
     print(f">>> Dataset cargado: {X.shape}")
 
-    # --- guardar sample raw ------------------------------------------------
+    # Muestra de entrada
     sample_path = Path("data", f"sample_{args.dataset}.png")
     save_grid(X, shape=(args.img_size, args.img_size), out=sample_path)
 
-    # ------------------ leer config JSON -----------------------------------
+    # ─────────────── leer configuración JSON del modelo ────────────────────
     with open(args.config_path) as f:
         cfg = json.load(f)
 
     in_dim = args.img_size * args.img_size
     enc_sizes = cfg["encoder"]["layer_sizes"];  enc_sizes[0]  = in_dim
     dec_sizes = cfg["decoder"]["layer_sizes"];  dec_sizes[-1] = in_dim
-    enc_acts  = cfg["encoder"]["activations"]
-    dec_acts  = cfg["decoder"]["activations"]
 
     vae = VAE(
-        encoder_sizes=enc_sizes, encoder_activations=enc_acts,
-        decoder_sizes=dec_sizes, decoder_activations=dec_acts,
-        latent_dim   = cfg.get("latent_dim", enc_sizes[-1]//2),
-        dropout_rate = cfg.get("dropout_rate", 0.0)
+        encoder_sizes   = enc_sizes,
+        encoder_activations = cfg["encoder"]["activations"],
+        decoder_sizes   = dec_sizes,
+        decoder_activations = cfg["decoder"]["activations"],
+        latent_dim      = cfg.get("latent_dim", enc_sizes[-1] // 2),
+        dropout_rate    = cfg.get("dropout_rate", 0.0)
     )
 
     trainer = VAETrainer(
@@ -158,12 +186,12 @@ def main():
         min_delta      = cfg.get("min_delta", 1e-4)
     )
 
-    # ------------------ entrenar -------------------------------------------
+    # ─────────────────────────── entrenamiento ─────────────────────────────
     print(f">>> Entrenando VAE con β={args.beta_final}…")
     vae.train_mode()
     history = trainer.fit(X, X)
 
-    # ------------------ carpetas de salida ---------------------------------
+    # ────────────────────────── salvado resultados ─────────────────────────
     tag     = f"{args.dataset}_img{args.img_size}_beta{args.beta_final}"
     out_dir = Path("checkpoints", f"{tag}_{datetime.now():%Y%m%d-%H%M%S}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -171,7 +199,6 @@ def main():
     vae.save_weights(out_dir / "vae_weights.npz")
     np.save(out_dir / "loss_history.npy", np.array(history, "float32"))
 
-    # ------------------ generar muestras -----------------------------------
     vae.eval_mode()
     gen = vae.generate(25)
     save_grid(gen, shape=(args.img_size, args.img_size),
@@ -179,6 +206,6 @@ def main():
 
     print(">>> Entrenamiento VAE completado.")
 
-# --------------------------------------------------------------------------
+# ────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     main()

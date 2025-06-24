@@ -71,29 +71,30 @@ Se generarán tres archivos en `/checkpoints`
 
 ### Ejercicio 2 — Variational AE
 
-Runner `src/runner_vae.py`  
-Flags clave  
-• `--dataset`        faces_only | emoji_full | dsprites  
-• `--img_size`       28/32/64 (según dataset)  
-• `--beta_final`     valor final de β  
-• `--kl_ramp_epochs` épocas para annealing 0 → β  
+Runner  `src/runner_vae.py`  
+**Flags clave**  
+• `--dataset` faces_only | emoji_full | dsprites | faces_lfw  
+• `--img_size` 28 / 32 / 64 (se ajusta solo para dsprites / ffhq / lfw)  
+• `--beta_final` valor final de β  
+• `--kl_ramp_epochs` épocas para annealing 0 → β  
+• `--max_emojis` máx. de imágenes a usar  
+• `--refresh_dataset` re-descarga forzada (OpenMoji)
 
-Comandos sugeridos  
+**Comandos sugeridos**
 
 | Dataset | Comando | Comentario |
 |---------|---------|------------|
-| Caras amarillas (197) | ```python src/runner_vae.py configs/vae.json --dataset faces_only``` | demo rápida |
-| OpenMoji completo | ```python src/runner_vae.py configs/vae.json --dataset emoji_full --max_emojis 2000``` | ~4 200 PNG |
-| dSprites 64×64 | ```python src/runner_vae.py configs/vae.json --dataset dsprites --beta_final 4 --kl_ramp_epochs 100``` | muestra disentanglement |
+| Caras amarillas (197×32 px) | ```python src/runner_vae.py configs/vae_optimized.json --dataset faces_only``` | demo rápida |
+| OpenMoji completo (≈ 4 200) | ```python src/runner_vae.py configs/vae_optimized.json --dataset emoji_full --max_emojis 2000``` | más diversidad |
+| dSprites 64×64 | ```python src/runner_vae.py configs/vae_optimized.json --dataset dsprites --beta_final 4 --kl_ramp_epochs 100``` | prueba disentanglement |
+| LFW deepfunneled (8 000) | ```python src/runner_vae.py configs/vae_optimized.json --dataset faces_lfw --max_emojis 8000 --img_size 64``` | descarga via TF-Datasets |
 
-Cada run guarda en  
-checkpoints/`<dataset>`_img`<size>`_beta`<β>`_`<timestamp>`/  
-    vae_weights.npz · loss_history.npy · vae_generated.png  
+Cada ejecución crea  
+`checkpoints/<dataset>_img<size>_beta<β>_<timestamp>/`  
+ · vae_weights.npz · loss_history.npy · vae_generated.png  
 
-Un *sample raw* del dataset queda en  
-data/sample_`<dataset>`.png
-
----
+Además se guarda un *sample* del dataset en  
+`data/sample_<dataset>.png`
 
 ## 📁 Estructura de carpetas
 
