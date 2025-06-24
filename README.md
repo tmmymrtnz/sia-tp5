@@ -14,9 +14,7 @@ Este TP explora tres variantes de autoencoders sobre distintos datasets:
 
 * **AE básico** – aprende los 32 caracteres 5 × 7 de `font.h`  
 * **Denoising AE** – quita ruido binario de los mismos caracteres  
-* **VAE** – genera emojis (OpenMoji) y disentangled sprites (dSprites)
-
-El código es *NumPy-only* y corre en CPU en minutos.
+* **VAE** – genera emojis (OpenMoji), disentangled sprites (dSprites) y caras (LFW deepfunneled)
 
 ---
 
