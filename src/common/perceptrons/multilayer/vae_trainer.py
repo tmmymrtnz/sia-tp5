@@ -27,6 +27,8 @@ class VAETrainer(Trainer):
         recon_loss, recon_grad = super()._loss_and_grad(y_hat, y_true)
         kl_loss  = self.vae.kl_divergence() / len(y_true)
         total    = recon_loss + self.beta * kl_loss
+        self._last_recon = recon_loss
+        self._last_kl = kl_loss
         return total, recon_grad
 
     # -------------------------------------------------- #
@@ -67,7 +69,13 @@ class VAETrainer(Trainer):
             loss_hist.append(epoch_loss)
 
             if epoch % self.log_every == 0 or epoch == 1 or epoch == self.epochs:
-                print(f"Epoch {epoch:>4d}/{self.epochs} | β={self.beta:.3f} | loss={epoch_loss:.6f}")
+                print(
+                    f"Epoch {epoch:>5d}/{self.epochs} | "
+                    f"β={self.beta:.3f} | "
+                    f"recon={self._last_recon:.5f} | "
+                    f"KL={self._last_kl:.5f} | "
+                    f"tot={epoch_loss:.5f}"
+                )
 
             # ---------- early-stopping ----------
             if self.early_stopping:

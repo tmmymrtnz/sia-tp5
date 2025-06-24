@@ -101,12 +101,3 @@ configs/          · JSON de hiper-parámetros
 data/             · datasets y samples de referencia  
 checkpoints/      · pesos + salidas organizadas por experimento  
 docs/             · enunciado y apuntes útiles  
-
----
-
-## 📊 Análisis de resultados  *(pendiente)*
-
-Se agregarán:  
-• gráficas de convergencia,  
-• proyección 2-D del espacio latente (AE) y  
-• interpolaciones en el VAE con distintas β.
