@@ -2,6 +2,7 @@ import os
 import re
 import json
 import argparse
+from common.perceptrons.multilayer.denoising_trainer import DenoisingTrainer
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -10,12 +11,17 @@ from common.perceptrons.multilayer.trainer import Trainer
 from autoencoder.autoencoder import Autoencoder
 from runner_autoencoder import parse_font_h
 
-def add_binary_noise(X: np.ndarray, noise_level: float, seed: int = 0) -> np.ndarray:
-    rng = np.random.RandomState(seed)
+def add_binary_noise(X: np.ndarray, noise_level: float) -> np.ndarray:
+    rng = np.random.RandomState()
     mask = rng.rand(*X.shape) < noise_level
     Xn = X.copy()
     Xn[mask] = 1.0 - Xn[mask]
     return Xn
+
+def add_gaussian_noise(X: np.ndarray, std_dev: float) -> np.ndarray:
+    noise = np.random.normal(0, std_dev, X.shape)
+    Xn = X + noise
+    return np.clip(Xn, 0, 1)  
 
 def plot_loss_avg(losses: list, title: str):
     min_len = min(len(hist) for hist in losses)
@@ -79,7 +85,6 @@ def main():
 
     for run in range(N):
         print(f"\n>>> Corrida {run + 1}/{N}")
-        X_noisy = add_binary_noise(X_clean, noise_level, seed=run)
 
         ae = Autoencoder(
             encoder_sizes       = cfg["encoder"]["layer_sizes"],
@@ -89,24 +94,36 @@ def main():
             dropout_rate        = cfg.get("dropout_rate", 0.0)
         )
 
-        trainer = Trainer(
-            net             = ae,
-            loss_name       = cfg["loss"],
-            optimizer_name  = cfg["optimizer"],
-            optim_kwargs    = {"learning_rate": cfg["lr"]},
-            batch_size      = cfg["batch_size"],
-            max_epochs      = cfg["max_epochs"],
-            log_every       = cfg.get("log_every", 100),
-            early_stopping  = True,
-            patience        = cfg["patience"],
-            min_delta       = cfg["min_delta"]
+        # Seleccionamos qué tipo de ruido usar según el config
+        noise_type = cfg.get("noise_type", "binary")
+        if noise_type == "binary":
+            noise_fn = add_binary_noise
+        elif noise_type == "gaussian":
+            noise_fn = add_gaussian_noise
+        else:
+            raise ValueError(f"Tipo de ruido no soportado: '{noise_type}'")
+
+        trainer = DenoisingTrainer(
+            noise_fn       = noise_fn,
+            noise_level    = noise_level,
+            net            = ae,
+            loss_name      = cfg["loss"],
+            optimizer_name = cfg["optimizer"],
+            optim_kwargs   = {"learning_rate": cfg["lr"]},
+            batch_size     = cfg["batch_size"],
+            max_epochs     = cfg["max_epochs"],
+            log_every      = cfg.get("log_every", 100),
+            early_stopping = True,
+            patience       = cfg["patience"],
+            min_delta      = cfg["min_delta"]
         )
 
-        ae.train_mode()
-        loss_hist = trainer.fit(X_noisy, X_clean)
+        loss_hist = trainer.fit(X_clean, X_clean)
         all_loss_hist.append(loss_hist)
 
+        # Evaluar con un nuevo batch ruidoso generado ahora
         ae.eval_mode()
+        X_noisy = noise_fn(X_clean, noise_level)
         X_rec = ae.forward(X_noisy)
         X_bin = (X_rec > 0.5).astype(int)
         diffs = np.abs(X_bin - X_clean)
@@ -122,7 +139,7 @@ def main():
     total_std = avg_error_per_char.std()
     max_error = int(avg_error_per_char.max())
 
-    print("\n>>> Evaluación PROMEDIO sobre múltiples corridas")
+    print("\n>>> Evaluación PROMEDIO sobre múltiples corridas para noise level: ", noise_level)
     print(f"→ Promedio de bits incorrectos: {total_avg:.4f} ± {total_std:.4f}")
     print(f"→ Máximo error promedio (por char): {max_error}")
     print("→ Promedio de errores por carácter:", avg_error_per_char.round(3).tolist())
@@ -132,7 +149,7 @@ def main():
     idx_mejor = int(np.argmin(avg_error_per_char))
     idx_peor  = int(np.argmax(avg_error_per_char))
 
-    Xn, Xc, Xr = recon_samples[0]  # usamos la primera corrida para visualizar
+    Xn, Xc, Xr = recon_samples[0] 
 
     mostrar_reconstruccion(idx_mejor, Xn, Xc, Xr, "Mejor")
     mostrar_reconstruccion(idx_peor,  Xn, Xc, Xr, "Peor")
